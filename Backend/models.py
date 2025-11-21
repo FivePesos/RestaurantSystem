@@ -42,5 +42,7 @@ class OrderItem(db.Model):
             "order_id": self.order_id,
             "menu_id": self.menu_id,
             "menu_name": self.menu.name if self.menu else None,
+            "menu_price": self.menu.price if self.menu else None,
+            "menu_image_url": self.menu.image_url if self.menu else None,
             "quantity": self.quantity
         }
