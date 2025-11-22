@@ -10,12 +10,11 @@ from models import Menu, Order, OrderItem
 
 api = Api(app)
 
-# configure upload folder and limits (adjust as needed)
 UPLOAD_SUBDIR = "images"
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", UPLOAD_SUBDIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 ALLOWED_EXT = {"png", "jpg", "jpeg", "gif"}
-MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_FILE_BYTES = 5 * 1024 * 1024  
 
 app.config.setdefault("UPLOAD_FOLDER", UPLOAD_DIR)
 app.config.setdefault("MAX_CONTENT_LENGTH", MAX_FILE_BYTES)
@@ -31,7 +30,9 @@ def bad_request(msg):
 
 """
     ADMIN - DONE
-    
+    WAITER - DONE
+    COOK - DONE
+    CUSTOMER - DONE
 """
 #Admin
 class AdminMenu(Resource):
@@ -41,10 +42,10 @@ class AdminMenu(Resource):
 
     def post(self):
         image_url = None
-        # handle multipart form-data (accept either "image" or "image_url" as file field)
         if request.content_type and request.content_type.startswith("multipart/form-data"):
             name = request.form.get("name")
             price = request.form.get("price")
+
             # try both common keys
             file = request.files.get("image") or request.files.get("image_url")
             if file and getattr(file, "filename", None):
@@ -206,7 +207,18 @@ class CookOrderItems(Resource):
         except Exception as e:
             db.session.rollback()
             return {"error": "Database error", "details": str(e)}, 500
+#Cashier
+class Cashier(Resource):
+    #if customer request
+    def get(self):
+        pass
 
+class CashierOrderItems(Resource):
+    #cashier can set order as paid
+    data = request.get_json() or {}
+    def post(self, id):
+        pass
+    
 #Customer
 class Customer(Resource):
     def get(self):

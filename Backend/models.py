@@ -17,7 +17,7 @@ class Menu(db.Model):
 class Order(db.Model):
     __tablename__ = 'orders'
     id = db.Column(db.Integer, primary_key=True)
-    status = db.Column(db.String(50), default="Pending")  # Pending, Preparing, Ready
+    status = db.Column(db.String(50), default="Pending")
 
     order_items = db.relationship('OrderItem', backref='order', lazy=True)
 
@@ -46,3 +46,6 @@ class OrderItem(db.Model):
             "menu_image_url": self.menu.image_url if self.menu else None,
             "quantity": self.quantity
         }
+
+class Customer(db.model):
+    __tablename__ = "customer_table"
