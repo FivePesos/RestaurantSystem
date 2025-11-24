@@ -47,5 +47,5 @@ class OrderItem(db.Model):
             "quantity": self.quantity
         }
 
-class Customer(db.model):
-    __tablename__ = "customer_table"
+#class Customer(db.model):
+    #pass

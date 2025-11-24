@@ -215,8 +215,8 @@ class Cashier(Resource):
 
 class CashierOrderItems(Resource):
     #cashier can set order as paid
-    data = request.get_json() or {}
-    def post(self, id):
+    #data = request.get_json() or {}
+    #def post(self, id):
         pass
     
 #Customer
