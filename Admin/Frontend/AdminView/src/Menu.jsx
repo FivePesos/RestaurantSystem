@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getMenus, createMenu, updateMenu, deleteMenu } from "./api";
+import { getMenus, createMenu, updateMenu, deleteMenu, socket } from "./api";
 import MenuList from "./MenuList";
 
 export default function Menu() {
@@ -9,6 +9,28 @@ export default function Menu() {
     const [msg, setMsg] = useState(null);
 
     useEffect(() => { fetchMenus(); }, []);
+
+    useEffect(() => {
+        // Listen for real-time menu updates
+        socket.on("menu_created", (menu) => {
+            setMenus(prev => [...prev, menu]);
+            setMsg("New menu item added!");
+        });
+        socket.on("menu_updated", (menu) => {
+            setMenus(prev => prev.map(m => m.id === menu.id ? menu : m));
+            setMsg("Menu item updated!");
+        });
+        socket.on("menu_deleted", (data) => {
+            setMenus(prev => prev.filter(m => m.id !== data.id));
+            setMsg("Menu item deleted!");
+        });
+
+        return () => {
+            socket.off("menu_created");
+            socket.off("menu_updated");
+            socket.off("menu_deleted");
+        };
+    }, []);
 
     async function fetchMenus() {
         setLoading(true);
@@ -24,9 +46,7 @@ export default function Menu() {
         try {
             const res = await createMenu({ name: form.name, price: form.price, imageFile: form.imageFile });
             if (res.ok) {
-                setMsg("Menu created");
                 setForm({ name: "", price: "", imageFile: null });
-                await fetchMenus();
             } else {
                 setMsg(JSON.stringify(res.body));
             }
@@ -36,19 +56,13 @@ export default function Menu() {
     async function handleUpdate(id, data) {
         setMsg(null);
         const res = await updateMenu(id, data);
-        if (res.ok) {
-            setMsg("Menu updated");
-            await fetchMenus();
-        } else setMsg(JSON.stringify(res.body));
+        if (!res.ok) setMsg(JSON.stringify(res.body));
     }
 
     async function handleDelete(id) {
         if (!window.confirm("Delete this menu item?")) return;
         const res = await deleteMenu(id);
-        if (res.ok) {
-            setMsg("Deleted");
-            setMenus(menus.filter(m => m.id !== id));
-        } else setMsg(JSON.stringify(res.body));
+        if (!res.ok) setMsg(JSON.stringify(res.body));
     }
 
     return (

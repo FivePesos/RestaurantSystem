@@ -5,7 +5,7 @@ from uuid import uuid4
 from werkzeug.utils import secure_filename
 from flask import url_for
 
-from configuration import app, db
+from configuration import app, db, socketio
 from models import Menu, Order, OrderItem
 
 api = Api(app)
@@ -22,19 +22,10 @@ app.config.setdefault("MAX_CONTENT_LENGTH", MAX_FILE_BYTES)
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
 
-# helper
 def bad_request(msg):
     return {"error": msg}, 400
 
-# ---------------- Resources ------------- #
-
-"""
-    ADMIN - DONE
-    WAITER - DONE
-    COOK - DONE
-    CUSTOMER - DONE
-"""
-#Admin
+# Admin
 class AdminMenu(Resource):
     def get(self):
         menus = Menu.query.all()
@@ -45,8 +36,6 @@ class AdminMenu(Resource):
         if request.content_type and request.content_type.startswith("multipart/form-data"):
             name = request.form.get("name")
             price = request.form.get("price")
-
-            # try both common keys
             file = request.files.get("image") or request.files.get("image_url")
             if file and getattr(file, "filename", None):
                 if not allowed_file(file.filename):
@@ -73,6 +62,7 @@ class AdminMenu(Resource):
         try:
             db.session.add(menu)
             db.session.commit()
+            socketio.emit("menu_created", menu.to_dict())
             return {"message": "Admin added new menu item", "menu": menu.to_dict()}, 201
         except Exception as e:
             db.session.rollback()
@@ -84,7 +74,6 @@ class AdminMenuItem(Resource):
         if not menu:
             return {"error": "Menu item not found"}, 404
 
-        # support multipart update (file) or json
         image_url = None
         if request.content_type and request.content_type.startswith("multipart/form-data"):
             name = request.form.get("name")
@@ -115,6 +104,7 @@ class AdminMenuItem(Resource):
 
         try:
             db.session.commit()
+            socketio.emit("menu_updated", menu.to_dict())
             return {"message": f"Admin - Menu item {id} updated", "menu": menu.to_dict()}, 200
         except Exception as e:
             db.session.rollback()
@@ -131,12 +121,13 @@ class AdminMenuItem(Resource):
         try:
             db.session.delete(menu)
             db.session.commit()
+            socketio.emit("menu_deleted", {"id": id})
             return {"message": f"Admin - Menu item {id} deleted"}, 200
         except Exception as e:
             db.session.rollback()
             return {"error": "Database error", "details": str(e)}, 500
 
-#Waiter
+# Waiter
 class WaiterMenu(Resource):
     def get(self):
         menus = Menu.query.all()
@@ -174,12 +165,13 @@ class WaiterOrder(Resource):
                 db.session.add(order_item)
 
             db.session.commit()
+            socketio.emit("order_created", order.to_dict())
             return {"message": "Order created", "order": order.to_dict()}, 201
         except Exception as e:
             db.session.rollback()
             return {"error": "Database error", "details": str(e)}, 500
 
-#Cook
+# Cook
 class CookOrders(Resource):
     def get(self):
         orders = Order.query.all()
@@ -203,46 +195,36 @@ class CookOrderItems(Resource):
         order.status = status
         try:
             db.session.commit()
+            socketio.emit("order_updated", order.to_dict())
             return {"message": f"order {id} status updated", "order": order.to_dict()}, 200
         except Exception as e:
             db.session.rollback()
             return {"error": "Database error", "details": str(e)}, 500
-#Cashier
+
+# Cashier
 class Cashier(Resource):
-    #if customer request
     def get(self):
         pass
 
 class CashierOrderItems(Resource):
-    #cashier can set order as paid
-    #data = request.get_json() or {}
-    #def post(self, id):
-        pass
+    pass
     
-#Customer
+# Customer
 class Customer(Resource):
     def get(self):
         menus = Menu.query.all()
         return {"menus": [m.to_dict() for m in menus]}, 200
 
-# Admin Routes
+# Routes
 api.add_resource(AdminMenu, "/admin/menu")
 api.add_resource(AdminMenuItem, "/admin/menu/<int:id>")
-
-#Waiter Routes
 api.add_resource(WaiterMenu, "/waiter/menu")
 api.add_resource(WaiterOrder, "/waiter/orders")
-
-#Cook routes
 api.add_resource(CookOrders, "/cook/orders")
 api.add_resource(CookOrderItems, "/cook/orders/<int:id>")
-
-#Customer routes
 api.add_resource(Customer, "/customer/menu")
 
-
 if __name__ == '__main__':
-    # ensure tables exist when running directly
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    socketio.run(app, debug=True, host="127.0.0.1", port=5000)
