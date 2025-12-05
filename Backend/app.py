@@ -137,10 +137,12 @@ class WaiterOrder(Resource):
     def post(self):
         data = request.get_json() or {}
         items = data.get("items")
+        seat_number = data.get("seat_number")  # Get seat number
+        
         if not items or not isinstance(items, list):
             return bad_request("items is required and must be a list of {menu_id, quantity}")
 
-        order = Order(status="Pending")
+        order = Order(status="Pending", seat_number=seat_number)
         try:
             db.session.add(order)
             for it in items:
@@ -164,6 +166,7 @@ class WaiterOrder(Resource):
                 order_item = OrderItem(order=order, menu=menu, quantity=qty)
                 db.session.add(order_item)
 
+            order.calculate_total()  # Calculate total
             db.session.commit()
             socketio.emit("order_created", order.to_dict())
             return {"message": "Order created", "order": order.to_dict()}, 201
@@ -174,7 +177,7 @@ class WaiterOrder(Resource):
 # Cook
 class CookOrders(Resource):
     def get(self):
-        orders = Order.query.all()
+        orders = Order.query.filter(Order.status != "Paid").all()  # Don't show paid orders
         return {"orders": [o.to_dict() for o in orders]}, 200
 
 class CookOrderItems(Resource):
@@ -204,11 +207,68 @@ class CookOrderItems(Resource):
 # Cashier
 class Cashier(Resource):
     def get(self):
-        pass
+        """Get all orders that are ready or already paid"""
+        # Filter by status or seat_number if provided
+        seat_number = request.args.get("seat_number")
+        status = request.args.get("status")
+        
+        query = Order.query
+        
+        if seat_number:
+            query = query.filter_by(seat_number=seat_number)
+        if status:
+            query = query.filter_by(status=status)
+        else:
+            # By default, show orders that are Ready or already Paid
+            query = query.filter(Order.status.in_(["Ready", "Paid"]))
+        
+        orders = query.order_by(Order.created_at.desc()).all()
+        return {"orders": [o.to_dict() for o in orders]}, 200
 
 class CashierOrderItems(Resource):
-    pass
+    def patch(self, id):
+        """Process payment for an order"""
+        order = Order.query.get(id)
+        if not order:
+            return {"error": "Order not found"}, 404
+
+        data = request.get_json() or {}
+        action = data.get("action")
+        
+        if action == "pay":
+            if order.is_paid:
+                return {"error": "Order already paid"}, 400
+            
+            if order.status != "Ready":
+                return {"error": "Order must be Ready before payment"}, 400
+            
+            # Process payment
+            order.is_paid = True
+            order.status = "Paid"
+            
+            try:
+                db.session.commit()
+                socketio.emit("order_paid", order.to_dict())
+                return {
+                    "message": f"Order {id} paid successfully",
+                    "order": order.to_dict(),
+                    "total_paid": order.total_amount
+                }, 200
+            except Exception as e:
+                db.session.rollback()
+                return {"error": "Database error", "details": str(e)}, 500
+        
+        else:
+            return bad_request("action must be 'pay'")
     
+    def get(self, id):
+        """Get specific order details for cashier"""
+        order = Order.query.get(id)
+        if not order:
+            return {"error": "Order not found"}, 404
+        
+        return {"order": order.to_dict()}, 200
+
 # Customer
 class Customer(Resource):
     def get(self):
@@ -222,6 +282,8 @@ api.add_resource(WaiterMenu, "/waiter/menu")
 api.add_resource(WaiterOrder, "/waiter/orders")
 api.add_resource(CookOrders, "/cook/orders")
 api.add_resource(CookOrderItems, "/cook/orders/<int:id>")
+api.add_resource(Cashier, "/cashier/orders")
+api.add_resource(CashierOrderItems, "/cashier/orders/<int:id>")
 api.add_resource(Customer, "/customer/menu")
 
 if __name__ == '__main__':

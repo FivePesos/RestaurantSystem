@@ -10,21 +10,35 @@ class Menu(db.Model):
 
     order_items = db.relationship('OrderItem', backref='menu', lazy=True)
 
-    def to_dict(self):  # helper to convert to JSON
+    def to_dict(self):
         return {"id": self.id, "name": self.name, "price": self.price, "image_url": self.image_url}
 
 
 class Order(db.Model):
     __tablename__ = 'orders'
     id = db.Column(db.Integer, primary_key=True)
+    seat_number = db.Column(db.String(20), nullable=True)  # Added seat number
     status = db.Column(db.String(50), default="Pending")
+    is_paid = db.Column(db.Boolean, default=False)  # Added payment tracking
+    total_amount = db.Column(db.Float, default=0.0)  # Added total amount
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)  # Added timestamp
 
-    order_items = db.relationship('OrderItem', backref='order', lazy=True)
+    order_items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
+
+    def calculate_total(self):
+        """Calculate total amount from order items"""
+        total = sum(item.quantity * item.menu.price for item in self.order_items if item.menu)
+        self.total_amount = total
+        return total
 
     def to_dict(self):
         return {
             "id": self.id,
+            "seat_number": self.seat_number,
             "status": self.status,
+            "is_paid": self.is_paid,
+            "total_amount": self.total_amount,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "items": [item.to_dict() for item in self.order_items]
         }
 
@@ -44,8 +58,6 @@ class OrderItem(db.Model):
             "menu_name": self.menu.name if self.menu else None,
             "menu_price": self.menu.price if self.menu else None,
             "menu_image_url": self.menu.image_url if self.menu else None,
-            "quantity": self.quantity
+            "quantity": self.quantity,
+            "subtotal": (self.menu.price * self.quantity) if self.menu else 0
         }
-
-#class Customer(db.model):
-    #pass
