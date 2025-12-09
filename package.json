@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "lucide-react": "^0.556.0",
     "react-router-dom": "^7.9.6",
     "socket.io-client": "^4.8.1"
   }

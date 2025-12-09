@@ -134,13 +134,21 @@ class WaiterMenu(Resource):
         return {"menus": [m.to_dict() for m in menus]}, 200
 
 class WaiterOrder(Resource):
+    def get(self):
+        """Get orders that are ready to serve (for waiter to see)"""
+        ready_orders = Order.query.filter_by(status="Ready", is_paid=False).all()
+        return {"orders": [o.to_dict() for o in ready_orders]}, 200
+
     def post(self):
         data = request.get_json() or {}
         items = data.get("items")
-        seat_number = data.get("seat_number")  # Get seat number
+        seat_number = data.get("seat_number")
         
         if not items or not isinstance(items, list):
             return bad_request("items is required and must be a list of {menu_id, quantity}")
+        
+        if not seat_number:
+            return bad_request("seat_number is required")
 
         order = Order(status="Pending", seat_number=seat_number)
         try:
@@ -166,7 +174,7 @@ class WaiterOrder(Resource):
                 order_item = OrderItem(order=order, menu=menu, quantity=qty)
                 db.session.add(order_item)
 
-            order.calculate_total()  # Calculate total
+            order.calculate_total()
             db.session.commit()
             socketio.emit("order_created", order.to_dict())
             return {"message": "Order created", "order": order.to_dict()}, 201
@@ -177,7 +185,8 @@ class WaiterOrder(Resource):
 # Cook
 class CookOrders(Resource):
     def get(self):
-        orders = Order.query.filter(Order.status != "Paid").all()  # Don't show paid orders
+        """Get all unpaid orders (cook shouldn't see paid orders)"""
+        orders = Order.query.filter_by(is_paid=False).all()
         return {"orders": [o.to_dict() for o in orders]}, 200
 
 class CookOrderItems(Resource):
@@ -207,20 +216,23 @@ class CookOrderItems(Resource):
 # Cashier
 class Cashier(Resource):
     def get(self):
-        """Get all orders that are ready or already paid"""
-        # Filter by status or seat_number if provided
+        """Get orders for cashier - can filter by table or status"""
         seat_number = request.args.get("seat_number")
         status = request.args.get("status")
         
         query = Order.query
         
+        # Filter by table if specified
         if seat_number:
             query = query.filter_by(seat_number=seat_number)
+        
+        # Filter by status if specified
         if status:
             query = query.filter_by(status=status)
         else:
-            # By default, show orders that are Ready or already Paid
-            query = query.filter(Order.status.in_(["Ready", "Paid"]))
+            # Show only unpaid orders by default (exclude fully paid orders)
+            # But include all statuses: Pending, Preparing, Ready
+            query = query.filter_by(is_paid=False)
         
         orders = query.order_by(Order.created_at.desc()).all()
         return {"orders": [o.to_dict() for o in orders]}, 200
@@ -275,6 +287,31 @@ class Customer(Resource):
         menus = Menu.query.all()
         return {"menus": [m.to_dict() for m in menus]}, 200
 
+# Table Status (useful for all interfaces)
+class TableStatus(Resource):
+    def get(self):
+        """Get status of all tables"""
+        tables = []
+        for i in range(1, 21):
+            table_name = f"Table {i}"
+            unpaid_orders = Order.query.filter_by(
+                seat_number=table_name,
+                is_paid=False
+            ).all()
+            
+            total = sum(o.total_amount for o in unpaid_orders)
+            has_ready = any(o.status == "Ready" for o in unpaid_orders)
+            
+            tables.append({
+                "table": table_name,
+                "is_free": len(unpaid_orders) == 0,
+                "order_count": len(unpaid_orders),
+                "total_amount": total,
+                "has_ready_orders": has_ready
+            })
+        
+        return {"tables": tables}, 200
+
 # Routes
 api.add_resource(AdminMenu, "/admin/menu")
 api.add_resource(AdminMenuItem, "/admin/menu/<int:id>")
@@ -285,6 +322,7 @@ api.add_resource(CookOrderItems, "/cook/orders/<int:id>")
 api.add_resource(Cashier, "/cashier/orders")
 api.add_resource(CashierOrderItems, "/cashier/orders/<int:id>")
 api.add_resource(Customer, "/customer/menu")
+api.add_resource(TableStatus, "/tables/status")
 
 if __name__ == '__main__':
     with app.app_context():
